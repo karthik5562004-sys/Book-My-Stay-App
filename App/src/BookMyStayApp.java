@@ -1,95 +1,63 @@
+import java.util.LinkedList;
+import java.util.Queue;
+
 public class BookMyStayApp {
 
     public static void main(String[] args) {
 
-        RoomInventory inventory = new RoomInventory();
+        BookingRequestQueue requestQueue = new BookingRequestQueue();
 
-        Room singleRoom = new Room(1, 250, 1500.0);
-        Room doubleRoom = new Room(2, 400, 2500.0);
-        Room suiteRoom = new Room(3, 750, 5000.0);
+        // Add booking requests
+        requestQueue.addRequest(new Reservation("Abhi", "Single"));
+        requestQueue.addRequest(new Reservation("Subha", "Double"));
+        requestQueue.addRequest(new Reservation("Vanmathi", "Suite"));
 
-        RoomSearchService searchService = new RoomSearchService();
-
-        searchService.searchAvailableRooms(
-                inventory,
-                singleRoom,
-                doubleRoom,
-                suiteRoom
-        );
+        // Process requests (FIFO)
+        requestQueue.processRequests();
     }
 }
 
-class RoomSearchService {
+class Reservation {
 
-    public void searchAvailableRooms(
-            RoomInventory inventory,
-            Room singleRoom,
-            Room doubleRoom,
-            Room suiteRoom) {
+    private String guestName;
+    private String roomType;
 
-        java.util.Map<String, Integer> availability = inventory.getRoomAvailability();
-
-        System.out.println("Room Search\n");
-
-        if (availability.getOrDefault("Single", 0) > 0) {
-            printRoomDetails("Single Room", singleRoom, availability.get("Single"));
-        }
-
-        if (availability.getOrDefault("Double", 0) > 0) {
-            printRoomDetails("Double Room", doubleRoom, availability.get("Double"));
-        }
-
-        if (availability.getOrDefault("Suite", 0) > 0) {
-            printRoomDetails("Suite Room", suiteRoom, availability.get("Suite"));
-        }
+    public Reservation(String guestName, String roomType) {
+        this.guestName = guestName;
+        this.roomType = roomType;
     }
 
-    private void printRoomDetails(String title, Room room, int availableCount) {
-        System.out.println(title + ":");
-        System.out.println("Beds: " + room.getBeds());
-        System.out.println("Size: " + room.getSize() + " sqft");
-        System.out.println("Price per night: " + room.getPrice());
-        System.out.println("Available: " + availableCount);
-        System.out.println();
+    public String getGuestName() {
+        return guestName;
+    }
+
+    public String getRoomType() {
+        return roomType;
     }
 }
 
-class RoomInventory {
+class BookingRequestQueue {
 
-    private java.util.Map<String, Integer> availability = new java.util.HashMap<>();
+    private Queue<Reservation> queue = new LinkedList<>();
 
-    public RoomInventory() {
-        availability.put("Single", 5);
-        availability.put("Double", 3);
-        availability.put("Suite", 2);
+    public void addRequest(Reservation reservation) {
+        queue.offer(reservation);
     }
 
-    public java.util.Map<String, Integer> getRoomAvailability() {
-        return availability;
-    }
-}
+    // Process requests in FIFO order
+    public void processRequests() {
 
-class Room {
+        System.out.println("Booking Request Queue");
 
-    private int beds;
-    private int size;
-    private double price;
+        while (!queue.isEmpty()) {
+            Reservation r = queue.poll(); // removes in FIFO order
 
-    public Room(int beds, int size, double price) {
-        this.beds = beds;
-        this.size = size;
-        this.price = price;
-    }
-
-    public int getBeds() {
-        return beds;
-    }
-
-    public int getSize() {
-        return size;
-    }
-
-    public double getPrice() {
-        return price;
+            System.out.println(
+                    "Processing booking for Guest: "
+                            + r.getGuestName()
+                            + ", Room Type: "
+                            + r.getRoomType()
+            );
+        }
     }
 }
