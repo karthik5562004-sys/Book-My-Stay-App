@@ -5,44 +5,29 @@ import java.util.*;
  * MAIN CLASS - BookMyStayApp
  * ============================================================
  *
- * Use Case 9: Error Handling & Validation
+ * Use Case 11: Concurrent Booking Simulation (Thread Safety)
  */
 public class BookMyStayApp {
 
     public static void main(String[] args) {
 
+        RoomInventory inventory = new RoomInventory();
         BookingRequestQueue queue = new BookingRequestQueue();
 
-        // Valid + Invalid requests
-        queue.addRequest(new Reservation("Abhi", "Single"));
-        queue.addRequest(new Reservation("Subha", "Double"));
-        queue.addRequest(new Reservation("InvalidUser", "Penthouse")); // invalid
-        queue.addRequest(new Reservation("OverUser", "Suite"));
-        queue.addRequest(new Reservation("AnotherUser", "Suite")); // may exceed availability
+        // Simulate multiple guest requests (same time)
+        queue.addRequest(new Reservation("Guest1", "Single"));
+        queue.addRequest(new Reservation("Guest2", "Single"));
+        queue.addRequest(new Reservation("Guest3", "Single"));
 
-        RoomInventory inventory = new RoomInventory();
-        BookingHistory history = new BookingHistory();
+        // Create multiple threads (simulating concurrent users)
+        Thread t1 = new Thread(new BookingProcessor(queue, inventory));
+        Thread t2 = new Thread(new BookingProcessor(queue, inventory));
+        Thread t3 = new Thread(new BookingProcessor(queue, inventory));
 
-        BookingService bookingService = new BookingService(history);
-
-        bookingService.processBookings(queue, inventory);
-    }
-}
-
-/**
- * ============================================================
- * CUSTOM EXCEPTIONS
- * ============================================================
- */
-class InvalidRoomTypeException extends Exception {
-    public InvalidRoomTypeException(String message) {
-        super(message);
-    }
-}
-
-class NoAvailabilityException extends Exception {
-    public NoAvailabilityException(String message) {
-        super(message);
+        // Start threads
+        t1.start();
+        t2.start();
+        t3.start();
     }
 }
 
@@ -55,55 +40,42 @@ class Reservation {
 
     private String guestName;
     private String roomType;
-    private String roomId;
 
     public Reservation(String guestName, String roomType) {
         this.guestName = guestName;
         this.roomType = roomType;
     }
 
-    public String getGuestName() {
-        return guestName;
-    }
-
-    public String getRoomType() {
-        return roomType;
-    }
-
-    public void setRoomId(String roomId) {
-        this.roomId = roomId;
-    }
-
-    public String getRoomId() {
-        return roomId;
-    }
+    public String getGuestName() { return guestName; }
+    public String getRoomType() { return roomType; }
 }
 
 /**
  * ============================================================
- * CLASS - BookingRequestQueue
+ * CLASS - BookingRequestQueue (THREAD-SAFE)
  * ============================================================
  */
 class BookingRequestQueue {
 
     private Queue<Reservation> queue = new LinkedList<>();
 
-    public void addRequest(Reservation r) {
+    // synchronized ensures only one thread accesses at a time
+    public synchronized void addRequest(Reservation r) {
         queue.offer(r);
     }
 
-    public Reservation getNext() {
+    public synchronized Reservation getNextRequest() {
         return queue.poll();
     }
 
-    public boolean isEmpty() {
+    public synchronized boolean isEmpty() {
         return queue.isEmpty();
     }
 }
 
 /**
  * ============================================================
- * CLASS - RoomInventory
+ * CLASS - RoomInventory (THREAD-SAFE)
  * ============================================================
  */
 class RoomInventory {
@@ -111,114 +83,65 @@ class RoomInventory {
     private Map<String, Integer> availability = new HashMap<>();
 
     public RoomInventory() {
-        availability.put("Single", 1);
-        availability.put("Double", 1);
-        availability.put("Suite", 1);
+        availability.put("Single", 1); // only 1 room → race condition test
     }
 
-    public boolean isValidRoomType(String type) {
-        return availability.containsKey(type);
+    public synchronized boolean hasAvailability(String type) {
+        return availability.getOrDefault(type, 0) > 0;
     }
 
-    public int getAvailable(String type) {
-        return availability.getOrDefault(type, 0);
-    }
-
-    public void decrement(String type) throws NoAvailabilityException {
+    public synchronized void allocateRoom(String type) {
         int count = availability.get(type);
-
-        if (count <= 0) {
-            throw new NoAvailabilityException("No " + type + " rooms available.");
-        }
-
         availability.put(type, count - 1);
     }
 }
 
 /**
  * ============================================================
- * CLASS - BookingHistory
+ * CLASS - BookingProcessor (THREAD)
  * ============================================================
  */
-class BookingHistory {
+class BookingProcessor implements Runnable {
 
-    private List<Reservation> history = new ArrayList<>();
+    private BookingRequestQueue queue;
+    private RoomInventory inventory;
 
-    public void add(Reservation r) {
-        history.add(r);
+    public BookingProcessor(BookingRequestQueue queue, RoomInventory inventory) {
+        this.queue = queue;
+        this.inventory = inventory;
     }
 
-    public List<Reservation> getAll() {
-        return history;
-    }
-}
+    @Override
+    public void run() {
 
-/**
- * ============================================================
- * CLASS - BookingService
- * ============================================================
- */
-class BookingService {
+        while (true) {
 
-    private Set<String> allocatedIds = new HashSet<>();
-    private BookingHistory history;
+            Reservation r;
 
-    public BookingService(BookingHistory history) {
-        this.history = history;
-    }
+            // Critical section: queue access
+            synchronized (queue) {
+                if (queue.isEmpty()) break;
+                r = queue.getNextRequest();
+            }
 
-    public void processBookings(BookingRequestQueue queue, RoomInventory inventory) {
+            if (r == null) continue;
 
-        System.out.println("Booking Processing with Validation\n");
+            // Critical section: inventory access
+            synchronized (inventory) {
+                if (inventory.hasAvailability(r.getRoomType())) {
 
-        while (!queue.isEmpty()) {
+                    inventory.allocateRoom(r.getRoomType());
 
-            Reservation r = queue.getNext();
+                    System.out.println(Thread.currentThread().getName()
+                            + " CONFIRMED: " + r.getGuestName()
+                            + " (" + r.getRoomType() + ")");
 
-            try {
-                validate(r, inventory);
-
-                String roomId = generateRoomId(r.getRoomType());
-
-                while (allocatedIds.contains(roomId)) {
-                    roomId = generateRoomId(r.getRoomType());
+                } else {
+                    System.out.println(Thread.currentThread().getName()
+                            + " FAILED: " + r.getGuestName()
+                            + " (No rooms available)");
                 }
-
-                allocatedIds.add(roomId);
-
-                // Safe inventory update
-                inventory.decrement(r.getRoomType());
-
-                r.setRoomId(roomId);
-                history.add(r);
-
-                System.out.println("CONFIRMED: " + r.getGuestName()
-                        + " | " + r.getRoomType()
-                        + " | Room ID: " + roomId);
-
-            } catch (InvalidRoomTypeException | NoAvailabilityException e) {
-
-                System.out.println("ERROR for " + r.getGuestName() + ": " + e.getMessage());
             }
         }
-    }
-
-    // Validation (Fail-Fast)
-    private void validate(Reservation r, RoomInventory inventory)
-            throws InvalidRoomTypeException, NoAvailabilityException {
-
-        if (!inventory.isValidRoomType(r.getRoomType())) {
-            throw new InvalidRoomTypeException(
-                    "Invalid room type: " + r.getRoomType());
-        }
-
-        if (inventory.getAvailable(r.getRoomType()) <= 0) {
-            throw new NoAvailabilityException(
-                    "No rooms available for type: " + r.getRoomType());
-        }
-    }
-
-    private String generateRoomId(String type) {
-        return type.substring(0, 1) + (int)(Math.random() * 1000);
     }
 }
